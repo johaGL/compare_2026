@@ -8,9 +8,10 @@
 #SBATCH --nodes=1
 #SBATCH --mem=240G
 #SBATCH --ntasks-per-node=20
-#SBATCH --time=200:00:00
-#SBATCH --exclusive
+#SBATCH --time=30:00:00
 ##################################################
+
+# run: sbatch -p compute_long <SCRIPT>
 scontrol show job $SLURM_JOB_ID
 
 eval "$(conda shell.bash hook)"  # this solves commandnotfounderror when conda activate
