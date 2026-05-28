@@ -1,6 +1,6 @@
 #!/bin/bash
 ########################## Slurm options
-#SBATCH --job-name=gsva_spata2
+#SBATCH --job-name=gsva2026
 #SBATCH --output=/mnt/cbib/thesis_gbm/spatial_thesis/spatial_metabolomics/slurmout/gsva2026_%j.out
 #SBATCH --chdir=/mnt/cbib/thesis_gbm/spatial_thesis/spatial_metabolomics/
 #SBATCH --mail-user=juana7@gmail.com
