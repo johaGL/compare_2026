@@ -1,0 +1,4 @@
+dataset_name	annotations_to_use	pathways_types	min_pathway_size
+MALDI_275_T	HMDB	KEGG WIKI	2
+UBcalibr2	HMDB LipidMaps	KEGG WIKI	2
+UBcalibr1	HMDB LipidMaps	KEGG WIKI	2
