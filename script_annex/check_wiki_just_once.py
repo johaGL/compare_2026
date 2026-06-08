@@ -1,57 +1,103 @@
 import os
 import anndata as ad
 import matplotlib.pyplot as plt
+from scipy.sparse import csr_matrix
 from scipy.stats import pearsonr
 from scipy.spatial import distance
 import seaborn as sns
 import numpy as np
 import pandas as pd
-from matplotlib.colors import ListedColormap
+import scanpy as sc
+
 from smpath.helpers import generate_coordinates_arr
 import smpath.processing.measures_methods as spm
 from scipy.stats import zscore
+import squidpy as sq
 
-def normalize_scores(scores_df, mode="zscore"):
-    if mode == "zscore":
-        df_z = pd.DataFrame(
-            zscore(scores_df, axis=1, nan_policy="omit"),
-            index=scores_df.index,
-            columns=scores_df.columns
-        )
-        return df_z
-    else:
-        print("not implemented, will return None")
-        return None
+palette_box = {'kpca' : "#66c2a5", 'gsva': "skyblue"}
+palette_swarm = {'kpca': "green", 'gsva': "cadetblue" }
 
 
-def open_scores_objects(out_parent_dir, dir_adata, SAMPLE):
+def open_scores_objects_full(out_parent_dir, dir_adata, SAMPLE):
+    """
+    opens both gsva and kpca matrices (dataframes)
+    the columns' names are the set identifiers, the rows' names the spots.
+    returns both separated matrices with the union of their column names (some columns are NaN)
+    """
     matrix_gsva_kegg = pd.read_csv(os.path.join(
         out_parent_dir, SAMPLE, f"{SAMPLE}-cmps-mx-KEGG-KEGG_gsva.tsv"
     ), sep='\t', index_col=0)
     adata_score_kegg = ad.read_h5ad(os.path.join(dir_adata, SAMPLE,
                                                  f"{SAMPLE}-scores-KEGG.h5ad"))
     kpca_kegg = adata_score_kegg.to_df()
-
     print(
         f"initial sets numbers: kpca -> {kpca_kegg.shape[1]}, gsva -> {matrix_gsva_kegg.shape[1]}")
 
-    print("  ", kpca_kegg.columns)
-    print("  ", matrix_gsva_kegg.columns)
-
-    ok_ids = list(set(kpca_kegg.columns.tolist()
-                      ).intersection(set(matrix_gsva_kegg.columns.tolist())))
+    ids_lack_in_a = set(matrix_gsva_kegg.columns.tolist()) - set(kpca_kegg.columns.tolist())
+    ids_lack_in_b = set(kpca_kegg.columns.tolist()) - set(matrix_gsva_kegg.columns.tolist())
 
     ok_spots = list(set(kpca_kegg.index.tolist()
                         ).intersection(set(matrix_gsva_kegg.index.tolist())))
 
-    kpca_kegg = kpca_kegg.loc[ok_spots, ok_ids]
-    matrix_gsva_kegg = matrix_gsva_kegg.loc[ok_spots, ok_ids]
+    kpca_kegg = kpca_kegg.loc[ok_spots, :]
+    for col in ids_lack_in_a:
+        kpca_kegg[col] = np.nan
+    matrix_gsva_kegg = matrix_gsva_kegg.loc[ok_spots, :]
+    for col in ids_lack_in_b:
+        matrix_gsva_kegg[col] = np.nan
 
     return kpca_kegg, matrix_gsva_kegg
 
 
+def subset_intersection_scores_objects(kpca_kegg:pd.DataFrame, matrix_gsva_kegg:pd.DataFrame):
+    """
+    opens both matrices (dataframes)
+    drops NaN columns
+    returns both separately, with the intersection of the columns' names
+    """
+    kpca_kegg = kpca_kegg.dropna(axis=1, how="all")
+    matrix_gsva_kegg = matrix_gsva_kegg.dropna(axis=1, how="all")
+
+    ok_ids = list(set(kpca_kegg.columns.tolist()
+                      ).intersection(set(matrix_gsva_kegg.columns.tolist())))
+
+    kpca_kegg = kpca_kegg.loc[:, ok_ids]
+    matrix_gsva_kegg = matrix_gsva_kegg.loc[:, ok_ids]
+
+    return kpca_kegg, matrix_gsva_kegg
+
+
+# def open_scores_objects(out_parent_dir, dir_adata, SAMPLE):
+#     matrix_gsva_kegg = pd.read_csv(os.path.join(
+#         out_parent_dir, SAMPLE, f"{SAMPLE}-cmps-mx-KEGG-KEGG_gsva.tsv"
+#     ), sep='\t', index_col=0)
+#     adata_score_kegg = ad.read_h5ad(os.path.join(dir_adata, SAMPLE,
+#                                                  f"{SAMPLE}-scores-KEGG.h5ad"))
+#     kpca_kegg = adata_score_kegg.to_df()
+#
+#     print(
+#         f"initial sets numbers: kpca -> {kpca_kegg.shape[1]}, gsva -> {matrix_gsva_kegg.shape[1]}")
+#
+#     print("  ", kpca_kegg.columns)
+#     print("  ", matrix_gsva_kegg.columns)
+#
+#     ok_ids = list(set(kpca_kegg.columns.tolist()
+#                       ).intersection(set(matrix_gsva_kegg.columns.tolist())))
+#
+#     ok_spots = list(set(kpca_kegg.index.tolist()
+#                         ).intersection(set(matrix_gsva_kegg.index.tolist())))
+#
+#     kpca_kegg = kpca_kegg.loc[ok_spots, ok_ids]
+#     matrix_gsva_kegg = matrix_gsva_kegg.loc[ok_spots, ok_ids]
+#
+#     return kpca_kegg, matrix_gsva_kegg
+
+
 def return_pearsons_all_feats(kpca_kegg,
                               matrix_gsva_kegg) -> pd.DataFrame:
+    kpca_kegg, matrix_gsva_kegg = subset_intersection_scores_objects(
+        kpca_kegg, matrix_gsva_kegg
+    )
     correls_res = list()
 
     assert np.all(
@@ -67,9 +113,9 @@ def return_pearsons_all_feats(kpca_kegg,
     return pd.DataFrame({"pathway_id": kpca_kegg.columns, "r": correls_res})
 
 
-def return_flattened_scores(kpca_kegg: pd.DataFrame,
-                            matrix_gsva_kegg: pd.DataFrame,
-                            return_spotwise=False):
+def return_variances_of_scores(kpca_kegg: pd.DataFrame,
+                               matrix_gsva_kegg: pd.DataFrame,
+                               return_spotwise=False):
     assert np.all(
         kpca_kegg.columns == matrix_gsva_kegg.columns), "Error, columns do not match, aborting!"
     assert np.all(
@@ -77,7 +123,7 @@ def return_flattened_scores(kpca_kegg: pd.DataFrame,
 
     axis_int = 0  # by default, across pathways (faster computation)
     if return_spotwise:
-        axis_int = 1
+        axis_int = 1   # across spots (very slow when too many spots)
 
     flattened_kpca = kpca_kegg.to_numpy().var(axis=axis_int)  # .flatten()
     flattened_gsva = matrix_gsva_kegg.to_numpy().var(
@@ -96,10 +142,11 @@ def return_flattened_scores(kpca_kegg: pd.DataFrame,
 
 def compute_ordering_tissues(huge: pd.DataFrame, which_values: str):
     """
-    huge is a dataframe with columns: pathway_id, r, tissue
-    ranks the tissue names by the median of the r values across pathway_id s
+    huge is a dataframe with columns: pathway_id, <which_values>, tissue
+    ranks the tissue names by the median of the values of the
+        column <which_values>     across pathway_id s
     """
-    assert which_values in ['r', 'abs(r)'], "Error, must be 'r' or 'abs(r)'"
+    assert which_values in ['r', 'abs(r)', 'value'], "Error, column not recognized"
     choo = pd.pivot(huge, columns="pathway_id", index="tissue",
                     values=which_values)
     choo = choo.assign(median_score_per_tissue=choo.median(axis=1).to_numpy())
@@ -155,132 +202,85 @@ def plot_this_pathway(pathway_id, pdseries, modality: str,
 
 def wrap_comp_moran(df:pd.DataFrame, coords_df:pd.DataFrame,
                     set_type:str, tissue:str):
+    # shift values to be all positive so avoids errors
+    min_val_all = df.min(skipna=True).min(skipna=True)
+
+    cols = df.columns.tolist()
+    vars = df.index.tolist()
+
+    df = df + abs(min_val_all) + 1e-20
+    df = pd.DataFrame(df, index=vars, columns=cols)
+    coords_df['obs'] = coords_df.index.tolist()
+    coords_df.index = coords_df.index.astype(str).tolist()
+
     adata = ad.AnnData(
-        X=df.values,
+        X=csr_matrix(df.values),
+        var=pd.DataFrame({'pathway_id': np.array(df.columns.tolist(), dtype=str)},
+                         index=df.columns.tolist(), dtype=str),
         obs=coords_df,
-        var=pd.DataFrame(index=df.columns)
     )
-
     adata.obsm['spatial'] = np.array(coords_df)
-    adata = spm.compute_moran_i(adata, n_perms=2)
+    adata.uns['spatial'] = {'my_slice_name': {
+        'scalefactors': {'fiducial_diameter_fullres': 100,
+                         'spot_diameter_fullres': 1,
+                         'tissue_hires_scalef': 1,
+                         'tissue_lowres_scalef': 1}}}
+    try:
+        sq.pl.spatial_scatter(adata, color=adata.var.index.tolist() ,img=False,
+                              save=os.path.join("fofo", f'{tissue}--{set_type}.png'), dpi=200)
 
-    print(adata.uns.keys())
+        print("yesssss!!!!!")
 
-    moran_df = adata.uns['moranI'].copy()
-    moran_df['pathway_id'] = moran_df.index.tolist()
-    moran_df['type'] = set_type
-    moran_df['tissue'] = tissue
+    except Exception as e:
+        print("$$$$$$$$$$$$$$$$$===============", e)
 
-    return moran_df[['pathway_id', 'I', 'type', 'tissue']]
+    # adata = spm.compute_moran_i(adata, n_perms=2) # fast, no need pvalues here
+    #
+    # moran_df = adata.uns['moranI'].copy()
+    # moran_df['pathway_id'] = moran_df.index.tolist()
+    # moran_df['type'] = set_type
+    # moran_df['tissue'] = tissue
+
+    #return moran_df[['pathway_id', 'I', 'type', 'tissue']]
+    return 0
 
 
 
 if __name__ == '__main__':
 
-    print(os.listdir("../../"), "%%%%%%")
     out_parent_dir = '../../apollo-gsva/compar_out_2026'  # TODO: modify in server: compar_out_2026
-    dir_adata = "../../apollo-data"
+    dir_adata = "../../apollo-data" # TODO: modify in server: data
 
     tisues_df = pd.read_csv("../the_data_list.tsv", sep="\t",
                               index_col=None, header=0)
-    tissues_list = tisues_df['dataset_name'].tolist()   #  [-4:]
+    tissues_list = tisues_df['dataset_name'].tolist()  #  [-4:]
     print(tissues_list)
 
     correls_dfs = list()
     scores_each_dfs = list()
     morans_dfs = list()
 
-    for SAMPLE in tissues_list:   #  ["LP-brain-mouse-7"]
+    for SAMPLE in tissues_list:
         try:
-            kpca_kegg, matrix_gsva_kegg = open_scores_objects(out_parent_dir,
-                                                              dir_adata,
-                                                              SAMPLE)
+            adata_score_kegg = ad.read_h5ad(os.path.join(dir_adata, SAMPLE,
+                                                         f"{SAMPLE}-scores-KEGG.h5ad"))
+
             coords_df = pd.read_csv(os.path.join(out_parent_dir,
                                                  SAMPLE, f'{SAMPLE}-coords.tsv'),
                                     sep='\t', index_col=0, header=0)
         except Exception as e:
             print(e, "failed opening")
 
-        kpca_I_df = wrap_comp_moran(kpca_kegg, coords_df, "kpca",
-                                    tissue=SAMPLE)
-        gsva_I_df = wrap_comp_moran(matrix_gsva_kegg, coords_df, "gsva", tissue=SAMPLE)
-
-        morans_dfs.append(pd.concat([kpca_I_df, gsva_I_df], ignore_index=True))
-
-        try:
-            kpca_kegg = normalize_scores(kpca_kegg)
-            matrix_gsva_kegg = normalize_scores(matrix_gsva_kegg)
-            if len(kpca_kegg.columns) > 1:
-                tmp_df = return_pearsons_all_feats(kpca_kegg, matrix_gsva_kegg)
-                tmp_df = tmp_df.assign(**{'abs(r)': tmp_df['r'].abs()})
-                tmp_df['tissue'] = SAMPLE
-                correls_dfs.append(tmp_df)
-
-                tmp_flat = return_flattened_scores(kpca_kegg, matrix_gsva_kegg)
-                tmp_flat['tissue'] = SAMPLE
-                scores_each_dfs.append(tmp_flat)
-            # end if
-        except:
-            print(SAMPLE, "=== ? what happened with this tissue ? ")
-
-
-    megaflat = pd.concat(scores_each_dfs, axis=0, ignore_index=True)
-
-    # -- plot correlations
-    # # -- correlations between spot-wise values: corr(gsva, kpca)
-
-    correls_merged = pd.concat(correls_dfs, axis=0, ignore_index=True)
-
-    tissues_order_by_correl = compute_ordering_tissues(correls_merged,
-                                                       which_values="abs(r)")
-
-    correls_merged = correls_merged.assign(
-        tissue=pd.Categorical(correls_merged['tissue'].tolist(),
-                              categories=tissues_order_by_correl))
-
-    sns.boxplot(data=correls_merged, x="tissue", y="abs(r)", hue="tissue",
-                # orient='h',
-                palette="PuBu_r", legend=False,
-                flierprops={"marker": "."}, zorder=0)
-    sns.swarmplot(data=correls_merged, x="tissue", y="abs(r)", hue="tissue",
-                  size=2,
-                  # color="black", # deprecated !
-                  palette='dark:black',
-                  # palette="Set2",
-                  zorder=1,
-                  legend=False)
-    plt.xticks(rotation=90)
-    plt.show()
-    plt.close()
-
-    # -- just plot the average scores to check their variability
-    megaflat = megaflat.assign(
-        tissue=pd.Categorical(megaflat['tissue'].tolist(),
-                              categories=tissues_order_by_correl))
-
-    palette_box = {'kpca' : "#66c2a5", 'gsva': "skyblue"}
-    palette_swarm = {'kpca': "green", 'gsva': "cadetblue" }
-
-    sns.boxplot(data=megaflat, x="tissue", y="avg_scores", hue="type",
-                palette=palette_box,
-                zorder=0,
-                flierprops={"marker": "."} )
-
-
-    sns.swarmplot(data=megaflat, x="tissue", y="avg_scores", hue="type",
-                  dodge=True, size=2.5,
-                  palette=palette_swarm,
-                  zorder=1)
-    plt.xticks(rotation=90)
-    plt.show()
-    plt.close()
+      
 
     # -- now plot the moran I scores of the features for each gsva and kpca
     moran_comb = pd.concat(morans_dfs, ignore_index=True)
 
-    moran_comb = moran_comb.assign(
-        tissue=pd.Categorical(moran_comb['tissue'].tolist(),
-                              categories=tissues_order_by_correl))
+    moran_comb.to_csv("noentiendo.csv", index=False)
+
+    # moran_comb = moran_comb.assign(
+    #     tissue=pd.Categorical(moran_comb['tissue'].tolist(),
+    #                           categories=tissues_order_by_correl))
 
     sns.boxplot(data=moran_comb, x="tissue", y="I", hue="type",
                 palette=palette_box,

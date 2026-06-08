@@ -10,6 +10,10 @@ import matplotlib.pyplot as plt
 
 palette_methods = {'kpca': "green", 'gsva': "cadetblue" }
 
+plt.rcParams.update({
+    "font.family": "Arial",
+    "font.size": 13})
+
 
 def select_line_log_kpca(out_kpca_logfile,
                          tissue, set_type='KEGG'):
@@ -25,8 +29,8 @@ def select_line_log_kpca(out_kpca_logfile,
 
 
 out_gsva_reps = "../out_reports_scripts2"
-out_kpca_logfiles = ["copy_log_remote/26-03-21_18-30-11-328845.log",
-                     "copy_log_remote/26-03-21_19-07-52-280348.log"
+out_kpca_logfiles = ["copy_log_spacepath_kpca/26-03-21_18-30-11-328845.log",
+                     "copy_log_spacepath_kpca/26-03-21_19-07-52-280348.log"
                      ]
 data_orig = "../../apollo-data"
 
@@ -84,10 +88,16 @@ print(foo.columns)
 foo = foo.assign(value=foo['value'].astype(float).to_numpy())
 foo['spots_n'] = foo['spots_n'].astype(float).to_numpy()
 foo = foo.sort_values(by=['value'] , ascending=True)
+
+fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 6))
 sns.lineplot(foo, x='spots_n', y='value', hue='method', style='method',
              markers=True, palette=palette_methods)
 plt.ylabel("time")
-plt.show()
+#plt.show()
+plt.tight_layout()
+# plt.show()
+plt.savefig("figs/viz_runtime_plot.pdf")
+plt.close()
 
 
 

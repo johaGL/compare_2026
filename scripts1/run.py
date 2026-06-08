@@ -14,8 +14,10 @@ import warnings
 def main(input_file, data_dir):
     """
     \b
-    Obtain the metabolite resolved matrix only
-    NOTE: requires the `smpath` virtual environment
+    Obtain the metabolite resolved matrix only, per set type (WIKI and KEGG)
+      Requires:
+        - the `smpath` virtual environment
+        - the scripts1/ already applied, that copies from '../../data/' to ../../compar_out_2026 all the required files (clean annotations, .h5ad and
 
     usage:
     cd scripts1

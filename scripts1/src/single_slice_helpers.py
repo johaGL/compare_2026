@@ -59,8 +59,3 @@ def safe_load_data_and_clean_annotations(SAMPLE,
     return adata_mz, annots_dict
 
 
-
-
-
-
-
